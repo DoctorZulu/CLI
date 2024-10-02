@@ -61,8 +61,17 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void remove_trailing_newline(char *str) {
+    int len = strlen(str);
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\r' || str[len - 1] == '\n')) {
+        str[len - 1] = '\0';  // Replace trailing whitespace with null-terminator
+        len--;
+    }
+}
+
 void processCommand(char *cmd) {
     // Example: Print the received command back
+	remove_trailing_newline(cmd);
     char response[BUFFER_SIZE + 20];
     snprintf(response, sizeof(response), "Received command: %s\r\n", cmd);
 
@@ -72,28 +81,39 @@ void processCommand(char *cmd) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        // Store the received byte in the buffer
-        if (received_byte == '\r' || received_byte == '\n') {
-            buffer[buffer_index] = '\0';  // Null-terminate the string
+        if (received_byte == '\r' || received_byte == '\n') { //end line or carriage return detected
+            // End of command; null-terminate the string
+            buffer[buffer_index] = '\0';
 
             // Process the full command (print or execute the command)
             processCommand(buffer);
 
             // Reset the buffer for the next command
             buffer_index = 0;
-        } else {
-            // Store the byte and increment the buffer index
-            buffer[buffer_index++] = received_byte;
+        } else if (received_byte == 0x08) {  // Backspace detected
+            if (buffer_index > 0) {
+                buffer_index--;  // Remove last character
 
+                // Send backspace sequence to clear in terminal visually
+                char backspace_sequence[3] = {0x08, ' ', 0x08}; // Backspace, Space, Backspace
+                HAL_UART_Transmit(&huart2, (uint8_t *)backspace_sequence, sizeof(backspace_sequence), HAL_MAX_DELAY);
+
+                buffer[buffer_index] = '\0';  // Null-terminate the string
+            }
+        } else {
             // Prevent buffer overflow
-            if (buffer_index >= BUFFER_SIZE) {
+            if (buffer_index < BUFFER_SIZE - 1) {  // Leave room for null terminator
+                buffer[buffer_index++] = received_byte;
+                buffer[buffer_index] = '\0';
+
+                // Echo the received byte back to the terminal
+                HAL_UART_Transmit(&huart2, (uint8_t *)&received_byte, 1, HAL_MAX_DELAY);
+            } else {
+                // Add error handling for buffer overflow
+
                 buffer_index = 0;
-                // Optionally handle buffer overflow (e.g., reset or give error)
             }
         }
-
-        // Echo the byte back to the terminal (for user feedback)
-        HAL_UART_Transmit(huart, &received_byte, 1, HAL_MAX_DELAY);
 
         // Re-enable the UART receive interrupt to receive the next byte
         HAL_UART_Receive_IT(&huart2, &received_byte, 1);
@@ -137,8 +157,6 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart2, &received_byte, 1);
-  uint8_t Check[] = "sanity Check !!!\r\n"; //Data to send
-  HAL_UART_Transmit(&huart2,Check,sizeof(Check),10);// Sending in normal mode
   /* USER CODE END 2 */
 
   /* Infinite loop */
