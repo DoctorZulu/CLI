@@ -31,6 +31,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+UART_HandleTypeDef huart2;
+#define BUFFER_SIZE 100
+char buffer[BUFFER_SIZE];   // Buffer to store the incoming command
+uint8_t buffer_index = 0;          // Current index in the buffer
+uint8_t received_byte;       // Variable to hold the incoming byte
 
 /* USER CODE END PD */
 
@@ -56,6 +61,47 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void processCommand(char *cmd) {
+    // Example: Print the received command back
+    char response[BUFFER_SIZE + 20];
+    snprintf(response, sizeof(response), "Received command: %s\r\n", cmd);
+
+    // Send response via UART
+    HAL_UART_Transmit(&huart2, (uint8_t *)response, strlen(response), HAL_MAX_DELAY);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+        // Store the received byte in the buffer
+        if (received_byte == '\r' || received_byte == '\n') {
+            buffer[buffer_index] = '\0';  // Null-terminate the string
+
+            // Process the full command (print or execute the command)
+            processCommand(buffer);
+
+            // Reset the buffer for the next command
+            buffer_index = 0;
+        } else {
+            // Store the byte and increment the buffer index
+            buffer[buffer_index++] = received_byte;
+
+            // Prevent buffer overflow
+            if (buffer_index >= BUFFER_SIZE) {
+                buffer_index = 0;
+                // Optionally handle buffer overflow (e.g., reset or give error)
+            }
+        }
+
+        // Echo the byte back to the terminal (for user feedback)
+        HAL_UART_Transmit(huart, &received_byte, 1, HAL_MAX_DELAY);
+
+        // Re-enable the UART receive interrupt to receive the next byte
+        HAL_UART_Receive_IT(&huart2, &received_byte, 1);
+    }
+}
+
+
+
 
 /* USER CODE END 0 */
 
@@ -90,7 +136,9 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_UART_Receive_IT(&huart2, &received_byte, 1);
+  uint8_t Check[] = "sanity Check !!!\r\n"; //Data to send
+  HAL_UART_Transmit(&huart2,Check,sizeof(Check),10);// Sending in normal mode
   /* USER CODE END 2 */
 
   /* Infinite loop */
